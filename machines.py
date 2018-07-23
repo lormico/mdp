@@ -55,7 +55,7 @@ class MachineManager:
 		machine = self._machineDict[machinename]
 		machine.setRunning(isRunning)
 		
-	def updateRecipes(self):
+	def updateRecipes(self, keepProgress=False):
 		logger.debug(MCHNS,'MachineManager.updateRecipes()')
 		recipesDict = DB.getRecipeStepProgressDict()
 		for machinename in recipesDict.keys():
@@ -64,7 +64,10 @@ class MachineManager:
 			if recipe:
 				machine.nBlocks = len(DB.getRecipeSteps(recipe))
 			machine.updateSchedule(recipesDict[machinename])
-			machine.firstStart = True
+			if keepProgress:
+				machine.updateTimes(setProgress = machine.progress)
+			else:
+				machine.firstStart = True
 		
 		# l'interfaccia carica la ricetta
 		# alla macchina serve lo schedule terra terra
@@ -378,6 +381,34 @@ class BreadMachine:
 		## altro...
 		# triggers['goodjahb'] = True
 		
+	def getBlockList(self):
+		'''
+		Restituisce una lista dei blocchi con il loro nome'
+		'''
+		logger.debug(MCHNS,'getBlockList()')
+		
+		if self.recipe:
+			blockList = DB.getBlockList(self.recipe)
+		else:
+			logger.error(MCHNS,'chiamato getBlockList() senza	avere una ricetta caricata!')
+			blockList = ('')
+			
+		return blockList
+		
+	def getStepList(self):
+		'''
+		Restituisce una lista degli step con il loro nome'
+		'''
+		logger.debug(MCHNS,'getStepList()')
+		
+		if self.recipe:
+			stepList = DB.getStepList(self.recipe, self.block)
+		else:
+			logger.error(MCHNS,'chiamato getStepList() senza	avere una ricetta caricata!')
+			stepList = ('')
+			
+		return stepList
+		
 	def getTask(self):
 		'''
 		Restituisce l'array (mot,rot) noto, come attributo della macchina 
@@ -399,14 +430,16 @@ class BreadMachine:
 		
 		return 0 if (withinAccuracy or tooHot) else 1
 
-	def updateTimes(self): # cambiare nome? resetTimes?
+	def updateTimes(self, setProgress=0): # cambiare nome? resetTimes?
 		'''
 		Funzione da chiamare al cambio di blocco, resetta i tempi di controllo
 		iniziali e finali
 		'''
 		t = time.time()
-		self.iBlock, self.iStep = t,t
-		
+		self.iPause = None
+		## Se viene chiesto di aggiungere un progresso, sposta indietro l'instante di inizio
+		self.iBlock, self.iStep = [t-setProgress]*2
+				
 		## la fine del blocco viene dalla ricetta
 		self.blockDuration = DB.getBlockDuration(self.recipe,self.block)
 		self.fBlock = self.blockDuration
@@ -436,7 +469,7 @@ class BreadMachine:
 					self.mot, self.rot = 0,0
 					self.firstStart = False
 
-				## Determina il tempo in cui è stata in pausa e sposta in avanti i tempi iniziali
+				## Determina il tempo in cui è stata ifirstStartn pausa e sposta in avanti i tempi iniziali
 				dPause = t-self.iPause if not self.iPause == None else 0
 				self.iBlock += dPause
 				self.iStep += dPause

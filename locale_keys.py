@@ -4,6 +4,10 @@ SETTINGS = 'settings'
 PANIC = 'panic'
 QUIT = 'quit'
 
+BLOCK = 'block'
+STEP = 'step'
+PROGRESS = 'progress'
+
 WELCOME = 'welcome'
 
 ADD_MACHINE = 'addmachine'

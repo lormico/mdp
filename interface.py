@@ -1,27 +1,26 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 '''
-NOTA: vorrei fare una funzione tipo newMachine() che gestisca tutto ciò che c'è da fare
-	quando va inserita una nuova macchina, sia che venga da salvataggio che se inserita
-	in modo da non impazzire quando devo andare a cambiare il modo in cui viene creata 
-	la MachinePage
+TODO: spostare tutto ciò che riguarda GPIO in machines.py onde evitare conflitti
 '''
-import curses, datetime, shutil, time, smbus
-import dbhandler
-import utils, logger
+import curses, datetime, shutil, time, os
+import dbhandler, logger
 import RPi.GPIO as GPIO
 from curses import panel
 from math import ceil, floor
 from decimal import Decimal
 
+os.environ.setdefault('ESCDELAY', '25')
+
 IFACE = '-I---'
 locale = "it"
 l10n = __import__("locale_" + locale)
+nullMachine = '-'*12
 
 W,H = shutil.get_terminal_size()
 
-issuedCommand = None	# cosa serve di tutto questo?
 pageDict = {}
+machinePages = []
 activePage = None
 previousPage = None
 triggers = {
@@ -33,10 +32,6 @@ triggers = {
 	'removedmachine':False
 }
 
-nullMachine = '-'*12
-machinePages = []
-#gauges = {}
-gaugesWindows = {}
 
 class Menu:#(object):                                                          
 
@@ -357,7 +352,7 @@ class MachinePage(Page):
 					(None,None,None)
 				)
 		except:
-			logger.exception(IFACE,'sum tin wong')
+			logger.exception(IFACE,'')
 
 	'''
 	def reset(self):
@@ -464,15 +459,24 @@ class ConfirmDialog(Page):
 	def askDialog(self):
 		logger.debug(IFACE,'askDialog()')
 		stdscr.nodelay(0)
+		choice = None
 		
 		while True:
 			key = stdscr.getkey()
+			key = 'KEY_ESC' if key == '' else key
 			if key == 's':
 				stdscr.nodelay(1)
-				return True
+				choice = True
 			elif key == 'n':
 				stdscr.nodelay(1)
-				return False
+				choice = False
+			elif key == 'KEY_ESC':
+				stdscr.nodelay(1)
+				choice = 'canceled'
+			
+			if choice:
+				logger.debug(IFACE,self.title+' risponde \''+str(choice)+'\'')
+				return choice
 				
 class ChooseDialog(ConfirmDialog):
 	def __init__(self, title, items, height=6, width=34, prow=None, pcol=None):
@@ -486,14 +490,16 @@ class ChooseDialog(ConfirmDialog):
 	def askDialog(self):
 		logger.debug(IFACE,'askDialog()')
 		stdscr.nodelay(0)
+		choice = None
 		
 		while True:
 			key = stdscr.getkey()
 			key = 'KEY_ENTER' if key == '\n' else key
+			key = 'KEY_ESC' if key == '' else key
 			logger.warning(IFACE,'ChooseDialog: premuto ['+key.upper()+']')
 			if key == 'KEY_ENTER':
 				stdscr.nodelay(1)
-				return self.chooser.selectedEntry
+				choice = self.chooser.selectedEntry
 			elif key == 'KEY_LEFT':
 				self.chooser.navigate(1)
 				self.chooser.update()
@@ -502,12 +508,20 @@ class ChooseDialog(ConfirmDialog):
 				self.chooser.navigate(-1)
 				self.chooser.update()
 				refreshSome()
+			elif key == 'KEY_ESC':
+				stdscr.nodelay(1)
+				choice = 'canceled'
 
+			if choice:
+				logger.debug(IFACE,self.title+' risponde \''+str(choice)+'\'')
+				return choice
+				
 class Chooser:
 	def __init__(self, page, items):
 		self.page = page
 		self.items = items
-		self.items.insert(0, '('+l10n.FNone+')')
+		# ATTENZIONE! la scelta 'Nessun@' va deprecata, per la MachinePage c'è la funzione 'azzera'
+		#self.items.insert(0, '('+l10n.FNone+')')
 		self.position = 0
 		self.selectedEntry = self.items[self.position]
 		
@@ -533,6 +547,20 @@ class Chooser:
 		self.win.insstr( 0,self.w-3, ' > ', curses.A_REVERSE)
 		self.win.addstr( 0,(self.w-len(self.selectedEntry))//2 , self.selectedEntry )
 	
+class DynamicChooseDialog(ChooseDialog):
+	'''
+	Dialog particolare che consente di essere aggiornato
+	'''
+	def __init__(self, title, height=6, width=34, prow=None, pcol=None):
+		super(DynamicChooseDialog, self).__init__(title, None, height, width, prow, pcol)
+		
+	def build(self):
+		self.page.addstr(1, (self.w-len(self.dialog))//2, self.dialog)
+	
+	def update(self, items):
+		self.items = items
+		self.chooser = Chooser(self.page, self.items)		
+		
 class InputDialog(ConfirmDialog):
 	'''
 	Dialog che deve fornire una casella di testo, elemento TextBox
@@ -552,9 +580,15 @@ class InputDialog(ConfirmDialog):
 			key = stdscr.getkey()
 			key = 'KEY_ENTER' if key == '\n' else key
 			key = 'KEY_BACKSPACE' if key == '\b' else key
+			key = 'KEY_ESC' if key == '' else key
 			logger.warning(IFACE,'InputDialog: premuto ['+key.upper()+']')
+			if key == 'KEY_ESC':
+				stdscr.nodelay(1)
+				logger.debug(IFACE,self.title+' risponde \'canceled\'')
+				return 'canceled'
 			if key == 'KEY_ENTER':
 				stdscr.nodelay(1)
+				logger.debug(IFACE,self.title+' risponde \''+self.textbox.string+'\'')
 				return self.textbox.string
 			elif key == 'KEY_BACKSPACE':
 				self.textbox.backspace()
@@ -780,204 +814,296 @@ class MainToolbar(Toolbar):
 		self.panel = panel.new_panel(self.toolbar)
 		self.buildToolbar(buttonsDict)
 
-def commandHandler(page, key):
+def cmdHdlr(page, key):
 	'''
-	Controlla se l'input è legato a un comando globale, e agisce di conseguenza.
-	Esegue l'azione adeguata in funzione della pagina attiva nel momento in cui
-		avviene l'input.
-		
-	NOTA: forse è il caso di esplodere questa funzione in più funzioni?
+	Redireziona l'input alla funzione di competenza.
 	'''
-	logger.warning(IFACE,'commandHandler: premuto ['+key.upper()+'], siamo in '+page.title)
-	global triggers
+	logger.warning(IFACE,'cmdHdlr: premuto ['+key.upper()+'], siamo in '+page.title)
 	
 	#####################
 	### commonToolbar ###
 	if key in l10n.commonToolbar.keys():
-		command = l10n.commonToolbar[key][0]
-		if command == 'quit':
-			pauseMachines()
-			setActivePage('quitDialog')
-			try:
-				confirm = activePage.askDialog()
-			except Exception as e:
-				logger.exception(IFACE,'sum tin wong')
-			logger.debug(IFACE,'QuitDialog ha detto '+str(confirm))
-			if confirm:
-				triggers['quit'] = True
-			else:
-				setActivePage(previousPage.title)
-		elif command == 'machines':
-			setActivePage('machinesMain')
-		elif command == 'recipes':
-			setActivePage('recipes')
-		elif command == 'panic':
-			triggers['panic'] = True
+		cmdHdlrCommon(key)
 	
 	####################
 	### machinesMain ###
 	if page.title == 'machinesMain':
-		if key in l10n.machinesMainToolbar.keys():
-			command = l10n.machinesMainToolbar[key][0]
-			if command == 'addmachine':
-				setActivePage('machineTemplates')
-		else:
-			try:
-				key = int(key)
-				logger.debug(IFACE,'commandHandler: indice = '+str(key-1)+', controllo se in '+str(range(0,len(machinePages))))
-				if key-1 in range(0,len(machinePages)):
-					setActivePage(machinePages[int(key)-1].title)
-			except:
-				logger.debug(IFACE,'commandHandler: ['+key+'] non era un numero.')
-	
+		cmdHdlrMachinesMain(key)
+			
 	########################
 	### machineTemplates ###
 	if page.title == 'machineTemplates':
-		if key == 'KEY_UP':
-			page.activeMenu.navigate(-1)
-			page.refreshMenus()
-			page.updateValues()
-			refreshSome()
-		elif key == 'KEY_DOWN':
-			page.activeMenu.navigate(1)
-			page.activeMenu.refresh()
-			page.updateValues()
-			refreshSome()
-		elif key in l10n.machineTemplatesToolbar.keys():
-			command = l10n.machineTemplatesToolbar[key][0]
-			if command == 'loadmachine':
-				inputDialog = InputDialog( 'inputDialog' )
-				setActivePage('inputDialog')
-				try:
-					name = activePage.askDialog()
-				except:
-					logger.exception(IFACE,'problema nella textbox')
-					
-				try:
-					'''
-					MANCA IL CONTROLLO DELL'UNIVOCITÀ
-					'''
-					templatename = previousPage.activeMenu.selectedEntry
-					#ID = page.selectedTemplateStats['ID']
-					DB.newMachine(name, templatename)
-					newMachinePage(name)
-					setActivePage('machinesMain')
-				except Exception as e:
-					logger.exception(IFACE,'errore nell\'aggiungere la macchina:')
-	
+		cmdHdlrMachineTemplates(key)
+		
 	#################			
 	### machine_* ###
 	if 'machine_' in page.title:
-		if key in l10n.machineToolbar.keys():
-			command = l10n.machineToolbar[key][0]
-			machinePage = activePage
+		cmdHdlrMachinePage(key)
+		
+	###############			
+	### recipes ###
+	if page.title == 'recipes':
+		cmdHdlrRecipes(key)
+
+
+def cmdHdlrCommon(key):
+	'''
+	Comandi della toolbar comune
+	'''
+	global triggers
+	
+	command = l10n.commonToolbar[key][0]
+	if command == 'quit':
+		pauseMachines()
+		setActivePage('quitDialog')
+		try:
+			confirm = activePage.askDialog()
+		except Exception as e:
+			logger.exception(IFACE,'')
 			
-			if command == 'loadrecipe':
-				# controllare prima che la macchina non sia in uso
-				# deve essere impossibile cambiare la ricetta finché è attiva
-				setActivePage('recipeChooseDialog')
-				try:
-					recipe = activePage.askDialog()
-				except Exception as e:
-					logger.exception(IFACE,'sum tin wong')
-					
+		if confirm == True:
+			triggers['quit'] = True
+		else:
+			setActivePage(previousPage.title)
+	elif command == 'machines':
+		setActivePage('machinesMain')
+	elif command == 'recipes':
+		setActivePage('recipes')
+	elif command == 'panic':
+		triggers['panic'] = True
+	
+def cmdHdlrMachinesMain(key):
+	'''
+	Comandi della pagina home delle macchine
+	'''
+	if key in l10n.machinesMainToolbar.keys():
+		command = l10n.machinesMainToolbar[key][0]
+		if command == 'addmachine':
+			setActivePage('machineTemplates')
+	else:
+		try:
+			key = int(key)
+			logger.debug(IFACE,'cmdHdlr: indice = '+str(key-1)+', controllo se in '+str(range(0,len(machinePages))))
+			if key-1 in range(0,len(machinePages)):
+				setActivePage(machinePages[int(key)-1].title)
+		except:
+			logger.debug(IFACE,'cmdHdlr: ['+key+'] non era un numero.')
+
+def cmdHdlrMachinePage(key):
+	'''
+	Comandi della pagina della macchina
+	'''
+	global triggers
+	
+	if key in l10n.machineToolbar.keys():
+		command = l10n.machineToolbar[key][0]
+		machinePage = activePage
+		
+		if command == 'loadrecipe':
+			setActivePage('recipeChooseDialog')
+			try:
+				recipe = activePage.askDialog()
+			except Exception as e:
+				logger.exception(IFACE,'')
+				
+			if recipe == 'canceled':
+				pass
+			else:
+				# TODO: controllare se la ricetta è non nulla
+				# in caso aprire un confirmDialog "si vuole cambiare ricetta? quella corrente non è ancora terminata!"
 				if l10n.FNone in recipe:
 					machinePage.setRecipe(None)
 				else:
 					machinePage.setRecipe(recipe)
-				triggers['updatedrecipe'] = True
-				setActivePage(previousPage.title)
+				machineManager.updateRecipes()
 				updateMachineUI()
+			setActivePage(previousPage.title)
+			
+		elif command == 'startstopschedule':
+			if machinePage.recipename:
+				machinePage.toggleActivity()
+				triggers['checkrunning'] = True
 				
-			elif command == 'startstopschedule':
-				if machinePage.recipename:
-					machinePage.toggleActivity()
-					triggers['checkrunning'] = True
+		elif command == 'reset':
+			pauseMachines()
+			setActivePage('resetDialog')
+			try:
+				confirm = activePage.askDialog()
+			except Exception as e:
+				logger.exception(IFACE,'')
+			logger.debug(IFACE,'ResetDialog ha detto '+str(confirm))
+			
+			try:
+				if confirm:
+					machines.machineManager.reset(machinePage.machinename)
+					unpauseMachines(exclude=machinePage.machinename)
+				else:
+					unpauseMachines()
+			except Exception as e:
+				logger.exception(IFACE,'')
+				
+			setActivePage(machinePage.title)
+			updateMachineUI()			
+			
+		elif command == 'removemachine':
+			machinename = activePage.machinename
+			setActivePage('remDialog')
+			try:
+				confirm = activePage.askDialog()
+				if confirm:
+					removeMachine(machinename)
+					triggers['removedmachine'] = True
+					setActivePage('machinesMain')
+				else:
+					setActivePage(previousPage.title)	
+			except:
+				logger.exception(IFACE,'')			
+				
+		elif command == 'skipto':
+			machine = machinePage.machine
+			# TODO: deve essere possibile farlo solo a macchina ferma
+			setActivePage('skiptoDialog') # è un ChooseDialog
+			try:
+				kind = activePage.askDialog()
+			except Exception as e:
+				logger.exception(IFACE,'')
+				
+			## Esci se premuto ESC, altrimenti prosegui
+			if kind == 'canceled':
+				pass
+			else:
+				try:
+					kind = l10n.bspDict[kind]
+					name = 'skipto'+kind+'Dialog'
+					hasProgress = False
 					
-			elif command == 'reset':
-				pauseMachines()
-				setActivePage('resetDialog')
-				try:
-					confirm = activePage.askDialog()
-				except Exception as e:
-					logger.exception(IFACE,'sum tin wong')
-				logger.debug(IFACE,'ResetDialog ha detto '+str(confirm))
-				
-				try:
-					if confirm:
-						machines.machineManager.reset(machinePage.machinename)
-						unpauseMachines(exclude=machinePage.machinename)
+					## Se non è scelto progress, popola il Chooser
+					if not kind == 'progress':
+						if kind == 'block':
+							items = machine.getBlockList()
+						elif kind == 'step':
+							items = machine.getStepList()
+						dialog = pageDict[name]
+						dialog.update(items)
+						
+					## Mostra il dialog relativo alla scelta fatta e registra il valore immesso
+					setActivePage(name)
+					try:
+						value = activePage.askDialog()
+					except Exception as e:
+						logger.exception(IFACE,'')
+						
+					## Esci se premuto ESC
+					if value == 'canceled':
+						pass
 					else:
-						unpauseMachines()
+						if kind == 'block':
+							value = int(value.split(' ')[0])
+							DB.setMachineStat( 
+								machine.name,
+								('block','step','progress'),
+								(value,1,0)
+							)						
+						if kind == 'step':
+							value = int(value.split(' ')[0])
+							DB.setMachineStat( 
+								machine.name,
+								('step','progress'),
+								(value,0)
+							)		
+						elif kind == 'progress':
+							value = float(value)
+							hasProgress = True
+							DB.setMachineStat( machine.name, 'progress' , value )
+													
+						machineManager.updateRecipes(keepProgress=hasProgress)
+						updateMachineUI()		
+									
 				except Exception as e:
-					logger.exception(IFACE,'e muort e kitmmurt')
-					
-				setActivePage(machinePage.title)
-				updateMachineUI()			
-				
-			elif command == 'removemachine':
-				machinename = activePage.machinename
-				setActivePage('remDialog')
-				try:
-					confirm = activePage.askDialog()
-					if confirm:
-						removeMachine(machinename)
-						triggers['removedmachine'] = True
-						setActivePage('machinesMain')
-					else:
-						setActivePage(previousPage.title)	
-				except:
-					logger.exception(IFACE,'ding bang ow')			
-					
-			elif command == 'skipto':
-				# apri chooseDialog [block/step/progress]
-				# se block o step apri chooseDialog [1..max]
-				# se progress apri inputDialog
-				pass		
+					logger.exception(IFACE,'(temporaneo): ')
+			## Torna alla pagina della macchina
+			setActivePage(machinePage.title)						
+						
 	
-	###############			
-	### recipes ###
-	if page.title == 'recipes':
-		if key == 'KEY_UP':
-			page.activeMenu.navigate(-1)
-			page.refreshMenus()
-			refreshSome()
-		elif key == 'KEY_DOWN':
-			page.activeMenu.navigate(1)
-			page.refreshMenus()
-			refreshSome()
-		elif key == 'KEY_LEFT':
-			page.navigateMenus(-1)
-			page.refreshMenus()
-			refreshSome()
-		elif key == 'KEY_RIGHT':
-			page.navigateMenus(1)
-			page.refreshMenus()
-			refreshSome()
-		elif key in l10n.recipesToolbar.keys():
-			command = l10n.recipesToolbar[key][0]
-			if command == 'addtask':
-				pass
-			elif command == 'removetask':
-				pass
-			elif command == 'string':
-				pass
-			elif command == 'recipesave':
-				pass
-
+def cmdHdlrMachineTemplates(key):
+	'''
+	Comandi della pagina dei template delle macchine
+	'''
+	if key == 'KEY_UP':
+		page.activeMenu.navigate(-1)
+		page.refreshMenus()
+		page.updateValues()
+		refreshSome()
+	elif key == 'KEY_DOWN':
+		page.activeMenu.navigate(1)
+		page.activeMenu.refresh()
+		page.updateValues()
+		refreshSome()
+	elif key in l10n.machineTemplatesToolbar.keys():
+		command = l10n.machineTemplatesToolbar[key][0]
+		if command == 'loadmachine':
+			inputDialog = InputDialog( 'inputDialog' )
+			setActivePage('inputDialog')
+			try:
+				name = activePage.askDialog()
+			except:
+				logger.exception(IFACE,'problema nella textbox')
+				
+			try:
+				'''
+				MANCA IL CONTROLLO DELL'UNIVOCITÀ
+				'''
+				templatename = previousPage.activeMenu.selectedEntry
+				#ID = page.selectedTemplateStats['ID']
+				DB.newMachine(name, templatename)
+				newMachinePage(name)
+				setActivePage('machinesMain')
+			except Exception as e:
+				logger.exception(IFACE,'errore nell\'aggiungere la macchina:')
+	
+def cmdHdlrRecipes(key):
+	'''
+	Controlli della pagina delle ricette
+	'''
+	if key == 'KEY_UP':
+		page.activeMenu.navigate(-1)
+		page.refreshMenus()
+		refreshSome()
+	elif key == 'KEY_DOWN':
+		page.activeMenu.navigate(1)
+		page.refreshMenus()
+		refreshSome()
+	elif key == 'KEY_LEFT':
+		page.navigateMenus(-1)
+		page.refreshMenus()
+		refreshSome()
+	elif key == 'KEY_RIGHT':
+		page.navigateMenus(1)
+		page.refreshMenus()
+		refreshSome()
+	elif key in l10n.recipesToolbar.keys():
+		command = l10n.recipesToolbar[key][0]
+		if command == 'addtask':
+			pass
+		elif command == 'removetask':
+			pass
+		elif command == 'string':
+			pass
+		elif command == 'recipesave':
+			pass	
+	
+	
 def setup(M):
 	'''
 	Viene inizializzato curses e impostato il GPIO. 
 	Vengono costruite le pagine tramite buildPages() e mostrata la schermata di benvenuto
 	'''
 	logger.info(IFACE,'setup()')
-	global machines
+	global machines, machineManager
 	machines = M
+	machineManager = M.machineManager
 	
-	global stdscr, DB#, thermometer
-	# H e W le definisco appena apro interface.py
-	#global H, W
-	
+	global stdscr, DB
 	stdscr = curses.initscr()
 	h,w = stdscr.getmaxyx()
 	if not (H,W) == (h,w):
@@ -1003,16 +1129,6 @@ def setup(M):
 	
 	GPIO.setmode(GPIO.BCM)
 	GPIO.setwarnings(False)
-	
-	'''
-	try:
-		PCF8591 = smbus.SMBus(1)
-		logger.warning(IFACE,'setup(M): attenzione! viene inizializzato il termometro su valori immessi a mano!')
-		thermometer = machines.TemperatureReading(0x02,0.00052945,0.00023979,0.000000036464,0x48,PCF8591)
-	except Exception as e:
-		thermometer = None
-		logger.exception(IFACE,'non sono riuscito a inizializzare il termometro:')
-	'''
 	
 	DB = dbhandler.DataBase('mdp.sqlite')
 		
@@ -1132,6 +1248,10 @@ def buildPages(M):
 	ResetDialog = ConfirmDialog( 'resetDialog' )
 	RecipeChooseDialog = ChooseDialog( 'recipeChooseDialog' , items=recipes )
 	RemoveDialog = ConfirmDialog( 'remDialog' )
+	SkipToDialog = ChooseDialog( 'skiptoDialog', items=l10n.skiptoDialog )
+	SkipToBlockDialog = DynamicChooseDialog( 'skiptoblockDialog' )
+	SkipToStepDialog = DynamicChooseDialog( 'skiptostepDialog' )
+	SkipToProgressDialog = InputDialog( 'skiptoprogressDialog' )
 	
 	###########################
 	### Pagina di benvenuto ###
@@ -1179,7 +1299,7 @@ def tick():
 	
 	try:
 		char = stdscr.getkey() 
-		commandHandler(activePage,char)
+		cmdHdlr(activePage,char)
 	except:
 		pass
 
@@ -1235,28 +1355,7 @@ def setActivePage(pageName):
 	
 if __name__ == '__main__':
 	try:
-		logger = logging.getLogger('iface')
-		logger.setLevel(logging.DEBUG)
-		
-		fh = logging.FileHandler('interface.log')
-		fh.setLevel(logging.DEBUG)
-		# create formatter and add it to the handlers
-		formatter = logging.Formatter('%(asctime)s [%(name)s:%(levelname)s] %(message)s')
-		fh.setFormatter(formatter)
-		# add the handlers to the logger
-		logger.addHandler(fh)
-
-		from time import sleep
-		keepgoing = True
-		
-		setup()
-		
-		while keepgoing:
-			tick()
-			if quitTrigger:
-				cleanup()
-				break
-			sleep(0.1)
+		print('This bit of code is not meant to run by itself.')
 		
 	except KeyboardInterrupt: 
 		pass

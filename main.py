@@ -119,45 +119,16 @@ def mainLoop():
 			return
 			
 		time.sleep(0.05)
-
-# vecchio ciclo main quando il programma faceva lavorare la macchina subito
-'''
-def main(): 
-	princess = BreadMachine(23,22,17,18)
-	[princess.motorSchedule,princess.thermoSchedule] = recipeToSchedules(recipe)
-	print princess.motorSchedule
-	print princess.thermoSchedule
-	princess.setZeroTime()
-	
-	while True:
-		for machine in machineList:
-			updateMachine(machine)
-			if machine.isDone:
-				return
-		time.sleep(0.2)
-'''
-
-def temptest():
-	thermometer = TemperatureReading(0x02, 0, 0, 0.0000257596)
-	while True:
-		print(thermometer.getTemperature())
-		time.sleep(0.5)
 		
 def cleanup():
 	interfacethread.stop()
 	machinethread.stop()
-	
-	#for machine in machineList:
-	#	machine.stopEverything()
-	
-
 	
 if __name__ == '__main__':
 	try:
 		logger.info(MDP,'Starting logging')
 		setup()
 		mainLoop()
-		#temptest()
 		cleanup()
 	except Exception as e:
 		raise e

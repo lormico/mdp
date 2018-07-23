@@ -44,8 +44,24 @@ dialogs = {
 	'resetDialog':'Azzerare la macchina?',
 	'recipeChooseDialog':'Scegli una ricetta:',
 	'remDialog':'Eliminare la macchina?',
-	'inputDialog':'Immettere robe:'
+	'inputDialog':'Immettere robe:',
+	'skiptoDialog':'Quale contatore modificare?',
+	'skiptoblockDialog':'Seleziona il blocco:',
+	'skiptostepDialog':'Seleziona lo step:',
+	'skiptoprogressDialog':'Immetti un tempo in secondi:'
 }
+
+bspDict = {
+	'Block':BLOCK,
+	'Step':STEP,
+	'Progresso':PROGRESS
+}
+	
+skiptoDialog = [
+	'Block',
+	'Step',
+	'Progresso'
+]
 	
 class machinesMain:
 	selectPrompt = 'Seleziona una macchina:'

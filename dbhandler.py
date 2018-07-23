@@ -177,8 +177,50 @@ class DataBase:
 		progresses = [r['progress'] for r in rows]
 		dictionary = dict(zip(names,zip(recipes,blocks,steps,progresses)))
 		
-		logger.debug(DBHDL,'getRecipeStepProgressDict() returns '+str(dict))
+		logger.debug(DBHDL,'getRecipeStepProgressDict() returns '+str(dictionary))
 		return dictionary
+		
+	def getBlockList(self, recipename):
+		ID = self.getRecipeID(recipename)
+		with self.db:
+			cursor = self.db.cursor()
+			cursor.execute('''SELECT step, block, temperature FROM recipes WHERE id=? and step>0''', (ID,))
+			rows = cursor.fetchall()
+		numbers = [r['step'] for r in rows]
+		blocks = [r['block'] for r in rows]
+		temps = [r['temperature'] for r in rows]
+		logger.debug(DBHDL,str(numbers)+str(blocks)+str(temps))
+		blockList = []
+		
+		for i in range(0,len(numbers)):
+			blockList.append(str(numbers[i])+' ('+blocks[i]+'@'+str(temps[i])+')')
+			
+		logger.debug(DBHDL,'getBlockList() returns '+str(blockList))
+		return blockList
+		
+	def getStepList(self, recipename, block):
+		# funzione orrenda, va riscritta con meno rimbalzi
+		rcpID = self.getRecipeID(recipename)
+		with self.db:
+			cursor = self.db.cursor()
+			cursor.execute('''SELECT block FROM recipes WHERE id=? and step=?''',(rcpID,block))
+			blockname = cursor.fetchone()
+		blockname = self.getBlockName(recipename, block)
+		blkID = self.getBlockID(blockname)
+		with self.db:
+			cursor = self.db.cursor()
+			cursor.execute('''SELECT step, motor, rotation FROM blocks WHERE id=? and step>0''',(blkID,))
+			rows = cursor.fetchall()
+		numbers = [r['step'] for r in rows]
+		motors = [r['motor'] for r in rows]
+		rotations = [r['rotation'] for r in rows]
+		stepList = []
+		
+		for i in range(0,len(numbers)):
+			stepList.append(str(numbers[i])+' (M'+str(motors[i])+',R'+str(rotations[i])+')')
+			
+		logger.debug(DBHDL,'getBlockList() returns '+str(stepList))
+		return stepList
 
 	def getBlockDuration(self, recipename, block):
 		ID = self.getRecipeID(recipename)
