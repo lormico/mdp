@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import RPi.GPIO as GPIO
-import time, signal, sys, math #quanto di questo mi serve effettivamente?
+import time, signal, sys, math
 from threading import Thread
 
 import dbhandler, logger
