@@ -6,7 +6,8 @@ QUIT = 'quit'
 
 BLOCK = 'block'
 STEP = 'step'
-PROGRESS = 'progress'
+BLOCKPROGRESS = 'blockprogress'
+STEPPROGRESS = 'stepprogress'
 
 WELCOME = 'welcome'
 
