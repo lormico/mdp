@@ -329,30 +329,31 @@ class MachinePage(Page):
 		self.addstr( 2,3, l10n.machine['loadedrecipe'] )
 		self.addstr( 5,3, l10n.machine['currentblock'] )
 		self.addstr( 8,3, l10n.machine['currentstep'] )
-		self.addstr( 11,3,l10n.machine['steptime'] )
-		#self.addstr( 14,3,l10n.machine['nextsteptime'] )
+		self.addstr( 11,3,l10n.machine['targettemp'] )
+		self.addstr( 14,3,l10n.machine['cooldowntime'] )
 		
 		self.addstr( 2,36, l10n.machine['status'] )
 		self.updateRecipeStats()
 		self.updateStatus()
 
 	def setRecipe(self, recipe):
+		logger.debug(IFACE,'setRecipe('+str(recipe)+')')
 		try:
 			DB.setMachineStat( self.machinename, 'recipe', recipe )
 			if recipe:
 				DB.setMachineStat( 
 					self.machinename,
-					('block','step','progress'),
-					(1,1,0.0)
+					('block','step','progress','blockprogress'),
+					(1,1,0.0,0.0)
 				)
 			else:
 				DB.setMachineStat( 
 					self.machinename,
-					('block','step','progress'),
-					(None,None,None)
+					('block','step','progress','blockprogress'),
+					(None,None,None,None)
 				)
 		except:
-			logger.exception(IFACE,'')
+			logger.exception(IFACE,'errore nell\'impostare la ricetta')
 
 	'''
 	def reset(self):
@@ -373,51 +374,63 @@ class MachinePage(Page):
 	def updateRecipeStats(self):
 		## Eliminato l'aggiornamento di self.machine, che è stato spostato fuori per evitare sovraccarico
 		self.recipename = self.machine.recipe
-		self.block = self.machine.block
-		self.step = self.machine.step
-		self.progress = self.machine.progress
-		for i in (3,6,9,12):
+		for i in (3,6,9):
 			self.addstr( i,3, ' '*22)
 		
 		## Ricetta caricata
-		if self.recipename:
+		if self.machine.recipe:
 			self.addstr( 3,3, self.machine.recipe, curses.color_pair(2))
 		else: 
 			self.addstr( 3,3, l10n.machine['norecipe'], curses.color_pair(1))
 
 		## Blocco attuale
-		if self.block:
-			if self.machine.blockprogress and self.machine.fBlock:
+		if self.machine.block:
+			if not (self.machine.blockprogress is None or self.machine.blockDuration is None):
 				blockprogress = str(round(self.machine.blockprogress,1))
-				fBlock = str(round(self.machine.fBlock,1))
+				blockDuration = str(round(self.machine.blockDuration,1))
 			else:
-				blockprogress,fBlock = '---','---'
+				blockprogress,blockDuration = '---','---'
 			self.addstr( 6,3, 
 				str(self.machine.block)+'/'+str(self.machine.nBlocks)+
-				'  ('+blockprogress+'/'+fBlock+')'
+				'  ('+blockprogress+'/'+blockDuration+')'
 				, curses.color_pair(2))
 		else:
 			self.addstr( 6,3, '----', curses.color_pair(1))
 			
 		## Step attuale
-		if self.step and self.machine.schedule:
-			if self.machine.progress and self.machine.fStep:
+		if self.machine.step and self.machine.schedule:
+			if not (self.machine.progress is None or self.machine.stepDuration is None):
 				progress = str(round(self.machine.progress,1))
-				fStep = str(round(self.machine.fStep,1))
+				stepDuration = str(round(self.machine.stepDuration,1))
 			else:
-				progress,fStep = '---','---'
+				progress,stepDuration = '---','---'
 			self.addstr( 9,3, 
 				str(self.machine.step)+'/'+str(len(self.machine.schedule))+
-				'  ('+progress+'/'+fStep+')'
+				'  ('+progress+'/'+stepDuration+')'
 				, curses.color_pair(2))
 		else:
 			self.addstr( 9,3, '----', curses.color_pair(1))
 			
-		## Progresso
-		if self.progress:
-			self.addstr( 12,3, str(round(self.machine.progress,1)), curses.color_pair(2))
+		## Temperatura target
+		if not self.machine.temperature is None:
+			self.addstr( 12,3,
+				str(round(self.machine.temperature,1))+'°C'
+				, curses.color_pair(2))
 		else:
-			self.addstr( 12,3, '----', curses.color_pair(1))
+			self.addstr( 12,3, '----       ', curses.color_pair(1))
+			
+		## Cooldown
+		try:
+			if self.machine.isResistorOn:
+				self.addstr( 15,3,
+					str(round(self.machine.currentHeatDuration,1))+'/'+
+					str(round(self.machine.maxHeatTimeCorrected,1))
+					, curses.color_pair(2))
+			else:
+				self.addstr( 15,3, '----       ', curses.color_pair(1))
+		except:
+			logger.exception(IFACE,'errore nel codice:')
+
 			
 	def toggleActivity(self):
 		self.isRunning = self.machine.isRunning
@@ -474,7 +487,7 @@ class ConfirmDialog(Page):
 				stdscr.nodelay(1)
 				choice = 'canceled'
 			
-			if choice:
+			if not choice is None:
 				logger.debug(IFACE,self.title+' risponde \''+str(choice)+'\'')
 				return choice
 				
@@ -977,8 +990,8 @@ def cmdHdlrMachinePage(key):
 					name = 'skipto'+kind+'Dialog'
 					hasProgress = False
 					
-					## Se non è scelto progress, popola il Chooser
-					if not kind == 'progress':
+					## Se non è scelto un progresso, popola il Chooser
+					if not 'progress' in kind:
 						if kind == 'block':
 							items = machine.getBlockList()
 						elif kind == 'step':
@@ -1001,17 +1014,25 @@ def cmdHdlrMachinePage(key):
 							value = int(value.split(' ')[0])
 							DB.setMachineStat( 
 								machine.name,
-								('block','step','progress'),
-								(value,1,0)
+								('block','step','blockprogress','progress'),
+								(value,1,0,0)
 							)						
-						if kind == 'step':
+						elif kind == 'step':
 							value = int(value.split(' ')[0])
 							DB.setMachineStat( 
 								machine.name,
 								('step','progress'),
 								(value,0)
 							)		
-						elif kind == 'progress':
+						elif kind == 'blockprogress':
+							value = float(value)
+							hasProgress = True
+							DB.setMachineStat( 
+								machine.name,
+								('blockprogress','progress'),
+								(value,0)
+							)		
+						elif kind == 'stepprogress':
 							value = float(value)
 							hasProgress = True
 							DB.setMachineStat( machine.name, 'progress' , value )
@@ -1251,8 +1272,9 @@ def buildPages(M):
 	SkipToDialog = ChooseDialog( 'skiptoDialog', items=l10n.skiptoDialog )
 	SkipToBlockDialog = DynamicChooseDialog( 'skiptoblockDialog' )
 	SkipToStepDialog = DynamicChooseDialog( 'skiptostepDialog' )
-	SkipToProgressDialog = InputDialog( 'skiptoprogressDialog' )
-	
+	SkipToBlockProgressDialog = InputDialog( 'skiptoblockprogressDialog' )
+	SkipToStepProgressDialog = InputDialog( 'skiptostepprogressDialog' )
+
 	###########################
 	### Pagina di benvenuto ###
 	Welcome = Page('welcome', None)
