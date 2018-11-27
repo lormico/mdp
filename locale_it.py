@@ -30,7 +30,9 @@ machine = {
 	'norecipe':'Nessuna',
 	'status':'Stato',
 	'active':'Attiva',
-	'idle':'In attesa'
+	'idle':'In attesa',
+	'targettemp':'Temperatura target',
+	'cooldowntime':'Tempo di cooldown'
 }
 
 pageTitles = {
@@ -48,19 +50,22 @@ dialogs = {
 	'skiptoDialog':'Quale contatore modificare?',
 	'skiptoblockDialog':'Seleziona il blocco:',
 	'skiptostepDialog':'Seleziona lo step:',
-	'skiptoprogressDialog':'Immetti un tempo in secondi:'
+	'skiptostepprogressDialog':'Immetti un tempo in secondi:',
+	'skiptoblockprogressDialog':'Immetti un tempo in secondi:'
 }
 
 bspDict = {
-	'Block':BLOCK,
+	'Blocco':BLOCK,
 	'Step':STEP,
-	'Progresso':PROGRESS
+	'Progresso del Blocco':BLOCKPROGRESS,
+	'Progresso dello Step':STEPPROGRESS
 }
 	
 skiptoDialog = [
-	'Block',
+	'Blocco',
 	'Step',
-	'Progresso'
+	'Progresso del Blocco',
+	'Progresso dello Step'
 ]
 	
 class machinesMain:
