@@ -42,7 +42,7 @@ class DataBase:
 				th1pin INTEGER, th2pin INTEGER, chan INTEGER, a0 REAL, a1 REAL, a3 REAL)''')
 			cursor.execute('''CREATE TABLE IF NOT EXISTS machines(
 				id INTEGER, name TEXT PRIMARY KEY, template TEXT, 
-				running INTEGER, recipe TEXT, block INTEGER, step INTEGER, progress REAL)''')
+				running INTEGER, recipe TEXT, block INTEGER, step INTEGER, progress REAL, blockprogress REAL)''')
 			cursor.execute('''CREATE TABLE IF NOT EXISTS recipes(
 				id INTEGER, step INTEGER, duration REAL, block TEXT, 
 				temperature REAL, name TEXT unique)''')
@@ -77,7 +77,7 @@ class DataBase:
 		#logger.debug(DBHDL, 'getMachine(\''+name+'\')')
 		with self.db:
 			cursor = self.db.cursor()
-			cursor.execute('''SELECT id, name, template, running, recipe, block, step, progress
+			cursor.execute('''SELECT id, name, template, running, recipe, block, step, progress, blockprogress
 								FROM machines WHERE name=?''', (name,))
 			return cursor.fetchone()
 	
@@ -165,19 +165,20 @@ class DataBase:
 		
 		return dict(zip(names,runnings))
 
-	def getRecipeStepProgressDict(self):
+	def getEveryMachineStats(self):
 		with self.db:
 			cursor = self.db.cursor()
-			cursor.execute('''SELECT name, recipe, block, step, progress FROM machines''')
+			cursor.execute('''SELECT name, recipe, block, step, progress, blockprogress FROM machines''')
 			rows = cursor.fetchall()
 		names = [r['name'] for r in rows]
 		recipes = [r['recipe'] for r in rows]
 		blocks = [r['block'] for r in rows]
 		steps = [r['step'] for r in rows]
 		progresses = [r['progress'] for r in rows]
-		dictionary = dict(zip(names,zip(recipes,blocks,steps,progresses)))
+		blockprogresses = [r['blockprogress'] for r in rows]
+		dictionary = dict(zip(names,zip(recipes,blocks,steps,progresses,blockprogresses)))
 		
-		logger.debug(DBHDL,'getRecipeStepProgressDict() returns '+str(dictionary))
+		logger.debug(DBHDL,'getEveryMachineStats() returns '+str(dictionary))
 		return dictionary
 		
 	def getBlockList(self, recipename):
@@ -268,6 +269,7 @@ class DataBase:
 		return dict(zip(steps,zip(durations,motors,rotations)))
 		
 	def getRecipeID(self, recipename):
+		logger.debug(DBHDL,'getRecipeID: richiesto per \''+str(recipename)+'\'')
 		with self.db:
 			cursor = self.db.cursor()
 			cursor.execute('''SELECT id FROM recipes WHERE name=?''', (recipename,))
