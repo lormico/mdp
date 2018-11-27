@@ -26,6 +26,7 @@ class MachineManager:
 		self.namesList = []
 	
 	def updateInventory(self):
+		# rivedere per bene
 		DBmachinesDict = DB.getTemplatesDict()
 		DBNames = DBmachinesDict.keys()
 		
@@ -55,40 +56,31 @@ class MachineManager:
 		machine = self._machineDict[machinename]
 		machine.setRunning(isRunning)
 		
-	def updateRecipes(self, keepProgress=False):
+	def updateRecipes(self, keepProgress=False): #togliere l'argomento
+		'''
+		TODO: rielaborare l'ordine di questa e tutte le funzioni collegate
+		'''
 		logger.debug(MCHNS,'MachineManager.updateRecipes()')
-		recipesDict = DB.getRecipeStepProgressDict()
-		for machinename in recipesDict.keys():
-			machine = self._machineDict[machinename]
-			recipe = recipesDict[machinename][0]
-			if recipe:
-				machine.nBlocks = len(DB.getRecipeSteps(recipe))
-			machine.updateSchedule(recipesDict[machinename])
-			if keepProgress:
-				machine.updateTimes(setProgress = machine.progress)
-			else:
-				machine.firstStart = True
 		
-		# l'interfaccia carica la ricetta
-		# alla macchina serve lo schedule terra terra
-		# grazie alla suddivisione delle ricette in blocchi è possibile fare dei minischedule
-		# 
-		# la macchina vede quale ricetta gli spetta
-		# in realtà non gliene frega niente gli basta sapere quale blocco deve fare
-		# se è vergine allora gli viene fornita la fase e basta, niente gestione di programmi interrotti
-		# dalla ricetta prende la fase, in termini di
-		#			( +secondi dal t0 della fase , blocco, Ttarget )		(e quindi deve registrare un tProgressoFase)
-		# dal blocco crea lo schedule in termini di 
-		#			( +secondi dal t0 del blocco , m, r )					(e quindi deve registrare un tProgressoBlocco)
-		#
-		# a meno che non è finita la fase che richiede la ripetizione di un determinato blocco:
-		#	ogni tick adegua la macchina allo schedule del blocco, finché non esaurisce lo schedule, quindi ricomincia da capo
-		# 
-		# deve scrivere sul DB in tempo reale quale fase sta eseguendo, e a che punto sta nella fase 
-		#				al resume si creerà un tempo ridotto per la fase, faccio partire direttamente il blocco ... 
-		# inoltre bisogna che venga scritto anche a che punto sta nel blocco
-		#				si crea un tempo zero fittizio (o una cosa del genere) in modo che il programma riprenda dove era rimasto
-		#				all'interno del blocco
+		## Recupera dal DB un dizionario con tutte le informazioni di tutte le macchine
+		everyMachineStats = DB.getEveryMachineStats()	# eMS = { machinename: (recipe,block,step,progress,blockprogress) }
+		for machinename in everyMachineStats.keys(): 
+			try:
+				## Estrae l'array con le stats della macchina in questione
+				## 		e le applica alla macchina
+				machineStats = everyMachineStats[machinename]
+				machine = self._machineDict[machinename]
+				machine.setMachineStatus(*machineStats)
+				
+				## Se è presente una ricetta, crea lo schedule relativo e prepara al primo avvio
+				recipe = machineStats[0]
+				if recipe:
+						machine.updateSchedule()
+						machine.firstStart = True
+						#machine.resetTimes( keepProgress )
+			
+			except Exception as e:
+				logger.exception(MCHNS,'errore caricando la ricetta per la macchina \''+machinename+'\'')
 		
 	def tick(self):
 		#logger.debug(MCHNS,'MachineManager.tick()')
@@ -136,7 +128,7 @@ class TemperatureReading:
 		self.resistance = 9850	# Valore misurato con multimetro
 		self.zerocelsius = 273.15
 		self.coefficients = [a0,a1,a3]
-		self.channel = 3#channel
+		self.channel = channel
 		self.address = add if add else address
 		self.bus = bus if bus else PCF8591
 		
@@ -185,7 +177,7 @@ class BreadMachine:
 		self.template = DB.getTemplate(template)
 		
 		self.recipe, self.block, self.step, self.blockprogress, self.progress = [None]*5
-		self.block,	self.schedule = None, None
+		self.temperature, self.schedule = None, None
 		self.nBlocks = None
 		
 		## Definisce i pin e gli array di pin
@@ -233,9 +225,8 @@ class BreadMachine:
 		self.tEndSchedule = 0
 		self.iPause = None #non 0 altrimenti pare che c'è una pausa dal 1970
 		
-		self.fStep, self.fBlock = [None]*2
-
-		self.maxHeatTime, self.cooldownTime = 1,2 # Valori di base che verranno modificati in mustCoolDown()
+		self.maxHeatTime, self.cooldownTime = 2,0 # Valori di base che verranno modificati in mustCoolDown()
+		self.maxHeatTimeCorrected, self.cooldownTimeCorrected = self.maxHeatTime, self.cooldownTime
 		self.tempAccuracy = 0.05
 
 		## Inizializza il termometro, se è collegato
@@ -248,23 +239,58 @@ class BreadMachine:
 		## Ferma tutto, ponendo la macchina in attesa
 		self.stopEverything()
 	
-	def updateSchedule(self, recipeDict):
+	def setMachineStatus(self, recipe=None, block=None, step=None, progress=None, blockprogress=None): # cambiare nome?
+		logger.debug(MCHNS,'setMachineStatus(recipe='+str(recipe)+',block='+str(block)+',step='+str(step)+',progress='+str(progress)+',blockprogress='+str(blockprogress)+')')
+		if not recipe is None:
+			self.recipe = recipe
+		if not block is None:
+			self.block = block
+		if not step is None:
+			self.step = step
+		if not progress is None:
+			self.progress = progress
+		if not blockprogress is None:
+			self.blockprogress = blockprogress
+			
+	def updateSchedule(self):
 		'''
-		Viene creato lo schedule del blocco, a partire dall'array recipeDict tipo
-			[ 'recipe', #block, #step, progress ]
+		Viene creato lo schedule del blocco, a partire dalla ricetta self.recipe
 		'''
-		logger.debug(MCHNS,self.name+'.updateSchedule('+str(recipeDict)+')')
+		logger.debug(MCHNS,self.name+'.updateSchedule()')
 		
-		self.recipe, self.block, self.step, self.progress = recipeDict
-		if not self.recipe:
-			self.schedule = None
-		else:
-			self.blockDuration = DB.getBlockDuration(self.recipe,self.block)
-			self.blockName = DB.getBlockName(self.recipe,self.block)
-			self.temperature = DB.getTemperature(self.recipe,self.block)
-			self.schedule = DB.getBlockSchedule(self.blockName)
+		if not (self.recipe and self.block):
+			logger.error(MCHNS,'updateSchedule(): si sta cercando di creare uno schedule senza i pezzi necessari!')
+		
+		self.nBlocks = len(DB.getRecipeSteps(self.recipe))
+		self.blockDuration = DB.getBlockDuration(self.recipe,self.block)
+		self.blockName = DB.getBlockName(self.recipe,self.block)
+		self.temperature = DB.getTemperature(self.recipe,self.block)
+		
+		self.schedule = DB.getBlockSchedule(self.blockName)
+		self.stepDuration = self.schedule[self.step][0]
+
 		logger.debug(MCHNS,self.name+'.updateSchedule() ha impostato lo schedule: '+str(self.schedule))
 		
+	def resetTimes(self, keepProgress=False): 
+		'''
+		Funzione da chiamare al cambio di blocco, resetta i tempi di controllo
+		iniziali e finali
+		'''
+		t = time.time()
+		self.iSync = t
+		
+		## Se viene chiesto di mantenere il progresso, lo ripristina e inizia a contare
+		##		la pausa in attesa dell'inizio del programma
+		if keepProgress:
+			self.iPause = t
+			self.iBlock = t-self.blockprogress
+			self.iStep = t-self.progress
+		else:
+			self.iPause = None
+			self.iBlock, self.iStep = t,t
+				
+		logger.info(MCHNS,'ora è '+str(round(t,1))+', la fine è schedulata a '+str(round(self.stepDuration,1)))
+	
 	def setMotor(self, out):
 		logger.info(MCHNS,self.name+': setMotor('+str(out)+') ['+str(self.MOT)+']')
 		GPIO.setup(self.MOT,GPIO.OUT)
@@ -309,8 +335,8 @@ class BreadMachine:
 		
 		## Calcola quanto tempo è stato acceso o spento
 		currentTime = time.time()
-		currentHeatDuration = currentTime - self.lastTimeResistorOff
-		currentCoolDuration = currentTime - self.lastTimeResistorOn
+		self.currentHeatDuration = currentTime - self.lastTimeResistorOff
+		self.currentCoolDuration = currentTime - self.lastTimeResistorOn
 		
 		## Ottiene la temperatura e corregge i tempi di cooldown
 		currentTemp = self.thermometer.getTemperature()
@@ -318,20 +344,17 @@ class BreadMachine:
 		deltaTemp = (targetTemp - currentTemp)/currentTemp
 		deltaTemp = deltaTemp if deltaTemp > 0 else 0
 		
-		heatCorrection = deltaTemp if deltaTemp < 5 else 5
-		if deltaTemp > 0.25:
-			if deltaTemp < 1:
-				coolCorrection = deltaTemp ** -1
-			else:
-				coolCorrection = 1
+		heatCorrection = deltaTemp*10 if deltaTemp*10 < 5 else 5
+		if deltaTemp > 0.1:
+			coolCorrection = (deltaTemp ** -0.3)
 		else:
-			coolCorrection = 4
-		maxHeatTimeCorrected = self.maxHeatTime + heatCorrection
-		cooldownTimeCorrected = self.cooldownTime + coolCorrection
+			coolCorrection = 2
+		self.maxHeatTimeCorrected = self.maxHeatTime + heatCorrection
+		self.cooldownTimeCorrected = self.cooldownTime + coolCorrection
 		
 		## Definisce le booleane che definiscono i casi in cui debba essere spento
-		triggerProtection = self.isResistorOn and currentHeatDuration > maxHeatTimeCorrected
-		continueProtection = not self.isResistorOn and currentCoolDuration < cooldownTimeCorrected
+		triggerProtection = self.isResistorOn and self.currentHeatDuration > self.maxHeatTimeCorrected
+		continueProtection = not self.isResistorOn and self.currentCoolDuration < self.cooldownTimeCorrected
 		
 		if triggerProtection or continueProtection:
 			return True
@@ -364,7 +387,10 @@ class BreadMachine:
 		'''
 		Cancella tutte le informazioni riguardo alla ricetta ed al progresso
 		'''
-		self.recipe, self.block, self.step, self.progress, self.schedule = [None]*5
+		self.recipe = None
+		self.block, self.step = None,None
+		self.progress, self.blockprogress = None,None
+		self.temperature, self.schedule = None,None
 		self.syncMachine(withRecipe=True)
 
 	def endRecipe(self):
@@ -430,25 +456,6 @@ class BreadMachine:
 		
 		return 0 if (withinAccuracy or tooHot) else 1
 
-	def updateTimes(self, setProgress=0): # cambiare nome? resetTimes?
-		'''
-		Funzione da chiamare al cambio di blocco, resetta i tempi di controllo
-		iniziali e finali
-		'''
-		t = time.time()
-		self.iPause = None
-		## Se viene chiesto di aggiungere un progresso, sposta indietro l'instante di inizio
-		self.iBlock, self.iStep = [t-setProgress]*2
-				
-		## la fine del blocco viene dalla ricetta
-		self.blockDuration = DB.getBlockDuration(self.recipe,self.block)
-		self.fBlock = self.blockDuration
-		
-		## la fine dello step viene dallo schedule
-		self.fStep = self.schedule[self.step][0]
-		
-		logger.info(MCHNS,'ora è '+str(round(t,1))+', la fine è schedulata a '+str(round(self.fStep,1)))
-				
 	def tick(self):
 		'''
 		Insieme di istruzioni da eseguire ad ogni ciclo. 
@@ -463,14 +470,17 @@ class BreadMachine:
 		if self.isRunning:
 			## La macchina è appena stata avviata?
 			if self.justToggled:
+				logger.debug(MCHNS,'tick(): justToggled!')
 				## Se è il primo avvio della ricetta, definisci i tempi e azzera gli stati mot e rot
 				if self.firstStart:
-					self.updateTimes()
-					self.mot, self.rot = 0,0
+					self.resetTimes( keepProgress=True )
+					#self.mot, self.rot = 0,0 ## ma non viene azzerata all'avvio del programma? ha senso?
+					
 					self.firstStart = False
-
+					
 				## Determina il tempo in cui è stata ifirstStartn pausa e sposta in avanti i tempi iniziali
-				dPause = t-self.iPause if not self.iPause == None else 0
+				dPause = t-self.iPause if not self.iPause is None else 0
+				logger.debug(MCHNS,'tick(): dPause='+str(dPause))
 				self.iBlock += dPause
 				self.iStep += dPause
 				self.justToggled = False
@@ -478,22 +488,24 @@ class BreadMachine:
 			## Controllo a che punto siamo nel block e nello step
 			tBlock = t-self.iBlock
 			tStep = t-self.iStep
-			
-			if tBlock > self.fBlock:
+			self.blockprogress = tBlock
+
+			if tBlock > self.blockDuration:
 				## Abbiamo finito il blocco, passiamo al successivo (ammesso che ce ne sia uno)
 				self.block += 1
+				self.step = 1
 				
 				if self.block > self.nBlocks:
 					self.endRecipe()
 					return
 					
 				## Aggiorniamo lo schedule e i tempi
-				self.updateSchedule((self.recipe, self.block, self.step, self.progress)) 
-				self.updateTimes()
+				self.updateSchedule() 
+				self.resetTimes()
 				tBlock = 0
 				tStep = 0
 				
-			if tStep > self.fStep:
+			if tStep > self.stepDuration:
 				## Abbiamo finito lo step, si passa al successivo o se non c'è si torna al primo
 				## metto in conto il tempo che mi sono mangiato
 				self.step += 1
@@ -501,17 +513,15 @@ class BreadMachine:
 					self.step = 1
 					
 				## Compenso il tempo extra passato nello step trascorso accorciando il seguente
-				overshoot = tStep-self.fStep
+				overshoot = tStep-self.stepDuration
 				self.iStep = t-overshoot
-				self.fStep = self.schedule[self.step][0]
+				self.stepDuration = self.schedule[self.step][0]
 				
 				self.progress = overshoot
-				
 			else:
 				## Lo step non è finito, semplicemente aggiorno il progresso
-				self.blockprogress = tBlock
 				self.progress = tStep
-				
+			
 			## Prendo lo stato target e attuo motore e rotazione
 			mot,rot = self.getTask()
 			if not mot == self.mot:		## Evito di spammare comandi al GPIO se non necessario
@@ -528,8 +538,12 @@ class BreadMachine:
 				if not heat == self.isResistorOn:
 					self.setResistor(heat)
 
-			## Sincronizziamo lo stato della macchina con il DB e avvertiamo che c'è da aggiornare l'interfaccia
-			self.syncMachine()
+			## Sincronizziamo lo stato della macchina con il DB non più di una
+			##		volta al secondo e avvertiamo che c'è da aggiornare l'interfaccia
+			dSync = t-self.iSync
+			if dSync > 1:
+				self.iSync = t
+				self.syncMachine()
 			triggers['updateui'] = True
 		
 		## Caso in cui la macchina non è running	
@@ -548,15 +562,16 @@ class BreadMachine:
 				self.syncMachine()
 				triggers['updateui'] = True
 				
-
+		
 	def syncMachine(self, withRunning=False, withRecipe=False):
 		'''
 		Scrive nel DB le informazioni base sullo stato della macchina
 		Se richiesto, scrive anche lo stato di attività e la ricetta
 		'''
 		progress = round(self.progress,2) if not self.progress == None else None
-		statkeys = ['block','step','progress']
-		statvals = [self.block, self.step, progress]
+		blockprogress = round(self.blockprogress,2) if not self.blockprogress == None else None
+		statkeys = ['block','step','progress','blockprogress']
+		statvals = [self.block, self.step, progress, blockprogress]
 		if withRunning:
 			statkeys.append('running')
 			statvals.append(self.isRunning)
