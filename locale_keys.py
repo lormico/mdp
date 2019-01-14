@@ -17,6 +17,7 @@ NEW_MACHINE = 'newmachine'
 LOAD_MACHINE = 'loadmachine'
 CLR_MACHINE = 'clearmachine'
 EDIT_MACHINE = 'editmachine'
+SET_TEMP = 'settemperature'
 
 RECIPES = 'recipes'
 START_STOP_SCHEDULE = 'startstopschedule'

@@ -173,6 +173,18 @@ class TemperatureReading:
 		#logger.debug(MCHNS,'coeff: '+str(a0)+','+str(a1)+','+str(a3)+'; r='+str(r)+', log(r)='+str(math.log(r))+', log(r)^3='+str(math.log(r)**3)+', 1/T='+str((a0 + a1 * math.log(r) + a3 * (math.log(r) ** 3))))
 		return celsiusTemp
 		
+class FakeTemperatureReading:
+	def __init__(self):
+		self.celsiusTemp = 25.0
+	
+	def getTemperature(self):
+		logger.debug(MCHNS,'MOCK: chiesta temperatura, T='+str(self.celsiusTemp))
+		return self.celsiusTemp
+		
+	def setTemperature(self, temperature):
+		logger.debug(MCHNS,'MOCK: impostata temperatura a T='+str(temperature))
+		self.celsiusTemp = temperature
+		
 class BreadMachine:
 	def __init__(self, name, template):
 		'''
@@ -238,11 +250,14 @@ class BreadMachine:
 		self.tempAccuracy = 0.05
 
 		## Inizializza il termometro, se è collegato
-		try:
-			self.thermometer = TemperatureReading(self.chan, self.a0, self.a1, self.a3)
-		except:
-			self.thermometer = None
-			logger.exception(MCHNS,'errore nel creare il termometro')
+		if SIMULATED:
+			self.thermometer = FakeTemperatureReading()
+		else:
+			try:
+				self.thermometer = TemperatureReading(self.chan, self.a0, self.a1, self.a3)
+			except:
+				self.thermometer = None
+				logger.exception(MCHNS,'errore nel creare il termometro')
 
 		## Ferma tutto, ponendo la macchina in attesa
 		self.stopEverything()

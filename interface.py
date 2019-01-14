@@ -676,6 +676,7 @@ class TempReading:
 			temp = str(round(self.thermometer.getTemperature(),0))[:-2]
 		else:
 			temp = str(999)
+		logger.debug(IFACE,'letta temperatura '+temp)
 		spaces = ' '*(3-len(temp))
 		self.win.insstr(0,0,spaces+temp)
 		
@@ -689,9 +690,8 @@ class ResistReading:
 		
 	def update(self):
 		self.win.erase()
-		if self.thermometer:
+		if self.thermometer and not SIMULATED:
 			resist = str(round(self.thermometer.getResistance()/1000,4))
-			#resist = str(self.thermometer.get8bitValue())
 		else:
 			resist = '--x--'
 		self.win.insstr(0,0,resist)
@@ -915,8 +915,8 @@ def cmdHdlrMachinePage(key):
 	'''
 	global triggers
 	
-	if key in l10n.machineToolbar.keys():
-		command = l10n.machineToolbar[key][0]
+	if ( key in l10n.machineToolbar.keys() ) or ( SIMULATED and key in l10n.machineToolbarFakeRPi.keys() ):
+		command = l10n.machineToolbarFakeRPi[key][0]	# Include anche i comandi di machineToolbar
 		machinePage = activePage
 		
 		if command == 'loadrecipe':
@@ -1051,7 +1051,25 @@ def cmdHdlrMachinePage(key):
 					logger.exception(IFACE,'(temporaneo): ')
 			## Torna alla pagina della macchina
 			setActivePage(machinePage.title)						
-						
+		
+		elif command == 'settemperature':
+			machine = machinePage.machine
+			setActivePage('settempDialog')
+			try: 
+				temp = activePage.askDialog()
+			except:
+				logger.exception(IFACE,'???')
+			
+			if temp == 'canceled':
+				pass
+			else:
+				try:
+					temp = float(temp)
+					machine.thermometer.setTemperature(temp)
+				except:
+					logger.exception(IFACE,'impossibile impostare la temperatura ('+temp+'definita')
+			## Torna alla pagina della macchina
+			setActivePage(machinePage.title)		
 	
 def cmdHdlrMachineTemplates(key):
 	'''
@@ -1198,7 +1216,7 @@ def buildPages(M):
 	topbar = Page('topbar', height=1, prow=0)
 	commonToolbar = MainToolbar(l10n.commonToolbar)
 	machinesMainToolbar = Toolbar(l10n.machinesMainToolbar)
-	machineToolbar = Toolbar(l10n.machineToolbar)
+	machineToolbar = Toolbar(l10n.machineToolbarFakeRPi) if SIMULATED else Toolbar(l10n.machineToolbar)
 	machineTemplatesToolbar = Toolbar(l10n.machineTemplatesToolbar)
 	recipesToolbar = Toolbar(l10n.recipesToolbar)
 	
@@ -1281,6 +1299,7 @@ def buildPages(M):
 	SkipToStepDialog = DynamicChooseDialog( 'skiptostepDialog' )
 	SkipToBlockProgressDialog = InputDialog( 'skiptoblockprogressDialog' )
 	SkipToStepProgressDialog = InputDialog( 'skiptostepprogressDialog' )
+	SetTempDialog = InputDialog( 'settempDialog' )
 
 	###########################
 	### Pagina di benvenuto ###

@@ -51,7 +51,8 @@ dialogs = {
 	'skiptoblockDialog':'Seleziona il blocco:',
 	'skiptostepDialog':'Seleziona lo step:',
 	'skiptostepprogressDialog':'Immetti un tempo in secondi:',
-	'skiptoblockprogressDialog':'Immetti un tempo in secondi:'
+	'skiptoblockprogressDialog':'Immetti un tempo in secondi:',
+	'settempDialog':'Immetti la temperatura:'
 }
 
 bspDict = {
@@ -88,7 +89,11 @@ machineToolbar = OrderedDict([
 	('z',[RESET,'Azzera']),
 	('s',[SKIPTO,'Salta a']),
 	('x',[REM_MACHINE,'Rim. Macchina'])]) #brutto nome
-	
+
+machineToolbarFakeRPi = machineToolbar.copy()
+machineToolbarFakeRPi.update([
+	('t',[SET_TEMP,'Imposta Temp.'])])
+
 machineTemplatesToolbar = OrderedDict([
 	('n',[NEW_MACHINE,'Nuova']),
 	('c',[LOAD_MACHINE,'Carica']),
