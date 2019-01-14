@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import time, sys #quanto di questo mi serve effettivamente?
+import time, sys
 from threading import Thread
 
 import logger
