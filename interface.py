@@ -84,7 +84,8 @@ class Menu:#(object):
 			msg = item + ' '*(self.ncols-len(item)-2)
 			self.window.addstr(index+1, 1, msg, mode)
 	
-	def navigate(self, n):                                                   
+	def navigate(self, n):
+		logger.debug(IFACE,self.menuName+': navigating '+str(n))                                                   
 		self.position += n                                                   
 		if self.position < 0:                                                
 			self.position = 0                                                
@@ -551,7 +552,8 @@ class Chooser:
 		
 		self.update()
 		
-	def navigate(self, n):                                                   
+	def navigate(self, n):
+		logger.debug(IFACE,'chooser in '+page.title+': navigating'+str(n))                                                   
 		self.position += n                                                   
 		if self.position < 0:                                                
 			self.position = len(self.items)-1                                                
@@ -1076,14 +1078,14 @@ def cmdHdlrMachineTemplates(key):
 	Comandi della pagina dei template delle macchine
 	'''
 	if key == 'KEY_UP':
-		page.activeMenu.navigate(-1)
-		page.refreshMenus()
-		page.updateValues()
+		activePage.activeMenu.navigate(-1)
+		activePage.refreshMenus()
+		activePage.updateValues()
 		refreshSome()
 	elif key == 'KEY_DOWN':
-		page.activeMenu.navigate(1)
-		page.activeMenu.refresh()
-		page.updateValues()
+		activePage.activeMenu.navigate(1)
+		activePage.activeMenu.refresh()
+		activePage.updateValues()
 		refreshSome()
 	elif key in l10n.machineTemplatesToolbar.keys():
 		command = l10n.machineTemplatesToolbar[key][0]
@@ -1112,20 +1114,20 @@ def cmdHdlrRecipes(key):
 	Controlli della pagina delle ricette
 	'''
 	if key == 'KEY_UP':
-		page.activeMenu.navigate(-1)
-		page.refreshMenus()
+		activePage.activeMenu.navigate(-1)
+		activePage.refreshMenus()
 		refreshSome()
 	elif key == 'KEY_DOWN':
-		page.activeMenu.navigate(1)
-		page.refreshMenus()
+		activePage.activeMenu.navigate(1)
+		activePage.refreshMenus()
 		refreshSome()
 	elif key == 'KEY_LEFT':
-		page.navigateMenus(-1)
-		page.refreshMenus()
+		activePage.navigateMenus(-1)
+		activePage.refreshMenus()
 		refreshSome()
 	elif key == 'KEY_RIGHT':
-		page.navigateMenus(1)
-		page.refreshMenus()
+		activePage.navigateMenus(1)
+		activePage.refreshMenus()
 		refreshSome()
 	elif key in l10n.recipesToolbar.keys():
 		command = l10n.recipesToolbar[key][0]
