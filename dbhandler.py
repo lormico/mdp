@@ -17,8 +17,6 @@ inoltre deve salvare:
 		se lo step in cui risultano non è l'ultimo dello schedule allora la macchina è stata fermata prematuramente
 '''
 import sqlite3 #Import the SQLite3 module
-import sys
-import time #non dovrebbe servirmi
 import logger
 DBHDL = '---D-'
 connections = []

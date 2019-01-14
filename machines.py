@@ -6,10 +6,18 @@ Modifiche:
 	piallare setActive - isRunning - Busy
 	rendere coerenti block-step fra DB e qui
 '''
-import smbus, time, signal, sys, math #quanto di questo mi serve effettivamente?
-import RPi.GPIO as GPIO
+import time, math
 import logger
-import dbhandler# as DB
+import dbhandler
+
+try:
+	import RPi.GPIO as GPIO
+	import smbus
+	SIMULATED = False
+except:
+	from mockRPi import GPIO
+	from mockRPi import smbus
+	SIMULATED = True
 
 MCHNS = '--M--'
 triggers = {
@@ -79,7 +87,7 @@ class MachineManager:
 						machine.firstStart = True
 						#machine.resetTimes( keepProgress )
 			
-			except Exception as e:
+			except:
 				logger.exception(MCHNS,'errore caricando la ricetta per la macchina \''+machinename+'\'')
 		
 	def tick(self):

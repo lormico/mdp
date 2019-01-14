@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import RPi.GPIO as GPIO
-import time, signal, sys, math #quanto di questo mi serve effettivamente?
+import time, sys #quanto di questo mi serve effettivamente?
 from threading import Thread
 
-import dbhandler, logger
+import logger
 MDP = 'M----'
 logger.info(MDP,'python version: '+str(sys.version_info[0]))
 
@@ -30,7 +29,7 @@ class MachineThread(Thread):
 		
 		try:
 			M.setup()
-		except Exception as e:
+		except:
 			logger.exception(MDP,'nel setup del motore qualcosa è andato storto!')
 			self.stop()
 			I.cleanup()
@@ -58,7 +57,7 @@ class MachineThread(Thread):
 					triggers['updateui'] = True
 					M.triggers['updateui'] = False
 				time.sleep(0.1)
-			except Exception as e:
+			except:
 				logger.exception(MDP,'nel thread del motore qualcosa è andato storto!')
 				self.stop()
 				I.cleanup()
@@ -90,7 +89,7 @@ class InterfaceThread(Thread):
 						triggers[trigger] = True
 						I.triggers[trigger] = False
 				time.sleep(self.timeinterval)
-			except Exception as e:
+			except:
 				logger.exception(MDP,'nel thread dell\'interfaccia qualcosa è andato storto!')
 				self.stop()
 				M.stop()

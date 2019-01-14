@@ -3,9 +3,16 @@
 '''
 TODO: spostare tutto ciò che riguarda GPIO in machines.py onde evitare conflitti
 '''
-import curses, datetime, shutil, time, os
+import curses, shutil, time, os
 import dbhandler, logger
-import RPi.GPIO as GPIO
+
+try:
+	import RPi.GPIO as GPIO
+	SIMULATED = False
+except:
+	from mockRPi import GPIO
+	SIMULATED = True
+	
 from curses import panel
 from math import ceil, floor
 from decimal import Decimal
@@ -48,12 +55,12 @@ class Menu:#(object):
 		## Geometria e creazione della sottofinestra
 		self.nlines = maxentries
 		self.ncols = width
-		                    
+		
 		self.window = page.derwin(self.nlines, self.ncols, r, c)
 		self.window.box() #superfluo         
 		
 		logger.debug(IFACE+'.Menu', 'creato menu \''+self.menuName+'\'')                 
-											  
+										
 	def update(self):
 		self.selectedEntry = self.items[self.position]
 		
@@ -106,7 +113,7 @@ class SubMenu(Menu):
 		## Geometria e creazione della sottofinestra
 		self.nlines = maxentries
 		self.ncols = width
-		                    
+
 		self.window = parent.derwin(self.nlines, self.ncols, r, c)
 			
 	def updateItems(self):
@@ -241,7 +248,7 @@ class Page(object):
 			else:
 				self.page.addstr(r, c, string)
 		except:
-		    logger.exception(IFACE,'Page.addstr(): errore inserendo \''+
+			logger.exception(IFACE,'Page.addstr(): errore inserendo \''+
 							string+'\' alla posizione r'+str(r)+'c'+str(c)+'. Nota che la pagina ha W,H:'+str(self.w)+','+str(self.h))
 
 			
@@ -783,7 +790,7 @@ class MachineListPage(Page):
 					name, template = machine
 					self.addstr(3+i, 4, str(i)+'. '+name+' ('+template+')')
 					i+=1
-		except Exception as e:
+		except:
 			logger.exception(IFACE,'updateList() di '+self.title+' non è andato a buon fine.')
 			
 class Toolbar:
@@ -871,7 +878,7 @@ def cmdHdlrCommon(key):
 		setActivePage('quitDialog')
 		try:
 			confirm = activePage.askDialog()
-		except Exception as e:
+		except:
 			logger.exception(IFACE,'')
 			
 		if confirm == True:
@@ -916,7 +923,7 @@ def cmdHdlrMachinePage(key):
 			setActivePage('recipeChooseDialog')
 			try:
 				recipe = activePage.askDialog()
-			except Exception as e:
+			except:
 				logger.exception(IFACE,'')
 				
 			if recipe == 'canceled':
@@ -942,7 +949,7 @@ def cmdHdlrMachinePage(key):
 			setActivePage('resetDialog')
 			try:
 				confirm = activePage.askDialog()
-			except Exception as e:
+			except:
 				logger.exception(IFACE,'')
 			logger.debug(IFACE,'ResetDialog ha detto '+str(confirm))
 			
@@ -952,7 +959,7 @@ def cmdHdlrMachinePage(key):
 					unpauseMachines(exclude=machinePage.machinename)
 				else:
 					unpauseMachines()
-			except Exception as e:
+			except:
 				logger.exception(IFACE,'')
 				
 			setActivePage(machinePage.title)
@@ -978,7 +985,7 @@ def cmdHdlrMachinePage(key):
 			setActivePage('skiptoDialog') # è un ChooseDialog
 			try:
 				kind = activePage.askDialog()
-			except Exception as e:
+			except:
 				logger.exception(IFACE,'')
 				
 			## Esci se premuto ESC, altrimenti prosegui
@@ -1003,7 +1010,7 @@ def cmdHdlrMachinePage(key):
 					setActivePage(name)
 					try:
 						value = activePage.askDialog()
-					except Exception as e:
+					except:
 						logger.exception(IFACE,'')
 						
 					## Esci se premuto ESC
@@ -1040,7 +1047,7 @@ def cmdHdlrMachinePage(key):
 						machineManager.updateRecipes(keepProgress=hasProgress)
 						updateMachineUI()		
 									
-				except Exception as e:
+				except:
 					logger.exception(IFACE,'(temporaneo): ')
 			## Torna alla pagina della macchina
 			setActivePage(machinePage.title)						
@@ -1242,7 +1249,7 @@ def buildPages(M):
 		if savedMachines:
 			for machine in savedMachines:
 				newMachinePage(machine[1],M)
-	except Exception as e:
+	except:
 		logger.exception(IFACE,'non è stato possibile caricare le macchine salvate:')
 			
 	##############################
@@ -1367,7 +1374,7 @@ def setActivePage(pageName):
 	page = pageDict[pageName]
 	try:
 		page.show()
-	except Exception as e:
+	except:
 		logger.exception(IFACE,'c\'è stato un problema con Page.show():')
 
 	## Mettere questo sotto in una funzione diversa da usare anche quando aggiorno i menu?
