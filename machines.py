@@ -6,20 +6,22 @@ Modifiche:
 	piallare setActive - isRunning - Busy
 	rendere coerenti block-step fra DB e qui
 '''
-import time, math
+import time, math, sys
 import logger
 import dbhandler
+MCHNS = '--M--'
 
 try:
 	import RPi.GPIO as GPIO
 	import smbus
 	SIMULATED = False
+	logger.info(MCHNS,"On RaspberryPi")
 except:
 	from mockRPi import GPIO
 	from mockRPi import smbus
 	SIMULATED = True
+	logger.info(MCHNS,"Simulating")
 
-MCHNS = '--M--'
 triggers = {
 	'quit':False,
 	'checkrunning':False,
@@ -614,8 +616,13 @@ def setup():
 	global PCF8591, address, DB
 	address = 0x48	# I2C-address of YL-40 PFC8591
 	
-	PCF8591 = smbus.SMBus(1)	# Create I2C instance and open the bus
-	
+	try:
+		PCF8591 = smbus.SMBus(1)	# Create I2C instance and open the bus
+	except:
+		if SIMULATED:
+			logger.exception(MCHNS, "Impossibile aprire l'interfaccia I2C: controllare le impostazioni del RPi")
+			sys.exit()
+
 	GPIO.setmode(GPIO.BCM)
 	GPIO.setwarnings(False)
 	
